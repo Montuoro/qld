@@ -13,7 +13,19 @@ sys.stdout.reconfigure(encoding='utf-8')
 # ============================================================
 # Configuration
 # ============================================================
-CURRENT_YEAR = 2025
+# Prompt for calendar year so the same exe works year after year
+print("=" * 60)
+print("  QLD Aggregate-to-ATAR Scale Builder")
+print("=" * 60)
+while True:
+    try:
+        _yr = int(input("Enter calendar year to build scale for (e.g. 2025): "))
+        if _yr >= 2023:
+            break
+        print("  Year must be 2023 or later. Try again.")
+    except ValueError:
+        print("  Invalid input — enter a 4-digit year. Try again.")
+CURRENT_YEAR = _yr
 SCALE_HISTORY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scale_history")
 
 def load_historical_scales():
@@ -705,25 +717,28 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 chart_path = os.path.join(BASE_DIR, "scale_comparison.png")
 
 sorted_years = sorted(historical_scales.keys())
-# Show up to the last 3 years (or all if fewer)
-chart_years = sorted_years[-3:] if len(sorted_years) > 3 else sorted_years
+chart_years = sorted_years  # Include all historical years; grows as archive grows
 
-# Distinct styles: older years get thinner dashed lines, current year is bold solid
-line_colors = ['#999999', '#D6604D', '#2166AC', '#4DAF4A', '#FF7F00']
-line_styles = [':', '--', '-', '-.', '-']
+# Palette for older years (cycles if needed); current year is always bold solid blue
+_hist_colors = ['#BBBBBB', '#999999', '#D6604D', '#4DAF4A', '#FF7F00', '#984EA3']
+_hist_styles = [':', '--', '-.', ':', '--', '-.']
 
 fig, ax = plt.subplots(figsize=(12, 7))
 
-for idx, year in enumerate(chart_years):
+_hist_idx = 0
+for year in chart_years:
     pairs = historical_scales[year]
     aggs = [p[1] for p in pairs]   # X axis
     atars = [p[0] for p in pairs]  # Y axis
-    color = line_colors[idx % len(line_colors)]
-    style = line_styles[idx % len(line_styles)]
-    lw = 2.5 if year == CURRENT_YEAR else 1.5
-    alpha = 1.0 if year == CURRENT_YEAR else 0.75
-    ax.plot(aggs, atars, color=color, linestyle=style, linewidth=lw,
-            alpha=alpha, label=str(year))
+    if year == CURRENT_YEAR:
+        ax.plot(aggs, atars, color='#2166AC', linestyle='-', linewidth=2.5,
+                alpha=1.0, label=str(year))
+    else:
+        color = _hist_colors[_hist_idx % len(_hist_colors)]
+        style = _hist_styles[_hist_idx % len(_hist_styles)]
+        ax.plot(aggs, atars, color=color, linestyle=style, linewidth=1.5,
+                alpha=0.7, label=str(year))
+        _hist_idx += 1
 
 ax.set_xlabel('Aggregate', fontsize=13)
 ax.set_ylabel('ATAR', fontsize=13)
@@ -935,3 +950,5 @@ if historical_scales:
         print(f"  Std dev:      {np.std(hist_shifts_arr):.2f} ATAR points")
         print(f"  Max positive: {np.max(hist_shifts_arr):+.2f}")
         print(f"  Max negative: {np.min(hist_shifts_arr):+.2f}")
+
+input("\nPress Enter to exit...")
