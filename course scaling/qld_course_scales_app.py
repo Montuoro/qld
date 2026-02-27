@@ -351,6 +351,13 @@ def fit_poly_4(x_pts, y_pts):
     return c[4], c[3], c[2], c[1], c[0]
 
 
+def fit_poly_3(x_pts, y_pts):
+    """Fit 3rd degree polynomial, return coefficients [Z3, Z2, Z1, Z0]."""
+    poly = np.polynomial.polynomial.Polynomial.fit(x_pts, y_pts, deg=3)
+    c = poly.convert().coef
+    return c[3], c[2], c[1], c[0]
+
+
 def eval_poly(coeffs, x):
     result = 0
     for i, c in enumerate(coeffs):
@@ -369,6 +376,7 @@ class SubjectData:
         self.pzx = self.p25x = self.p50x = self.p75x = self.p90x = self.p99x = self.max_x = 0
         self.min_y = self.pzy = self.p25y = self.p50y = self.p75y = self.p90y = self.p99y = self.max_y = 0
         self.X4 = self.X3 = self.X2 = self.X1 = self.X0 = 0
+        self.Z3 = self.Z2 = self.Z1 = self.Z0 = 0
         self.max_fit_error = 0
         self.committed = False
 
@@ -380,6 +388,10 @@ class SubjectData:
         y_all = [self.min_y, self.pzy, self.p25y, self.p50y,
                  self.p75y, self.p90y, self.p99y, self.max_y]
         self.X4, self.X3, self.X2, self.X1, self.X0 = fit_poly_4(x_all, y_all)
+        # Fit Z polynomial (cubic) through lower 4 points: Min, PZ, P25, P50
+        x_lower = [self.min_x, self.pzx, self.p25x, self.p50x]
+        y_lower = [self.min_y, self.pzy, self.p25y, self.p50y]
+        self.Z3, self.Z2, self.Z1, self.Z0 = fit_poly_3(x_lower, y_lower)
         # Compute max fit error across all 8 points
         self.max_fit_error = 0
         for x, y in zip(x_all, y_all):
@@ -396,6 +408,7 @@ class SubjectData:
             'P25 Y': self.p25y, 'P50 Y': self.p50y, 'P75 Y': self.p75y,
             'P90 Y': self.p90y, 'P99 Y': self.p99y, 'Max Y': round(self.max_y, 2),
             'X4': self.X4, 'X3': self.X3, 'X2': self.X2, 'X1': self.X1, 'X0': self.X0,
+            'Z3': self.Z3, 'Z2': self.Z2, 'Z1': self.Z1, 'Z0': self.Z0,
         }
 
 
@@ -1086,7 +1099,7 @@ class QldCourseScalesApp:
         cols = ['Subject Name', 'Subject ID', 'Min X', 'PZX', 'P25 X', 'P50 X',
                 'P75 X', 'P90 X', 'P99 X', 'Max X', 'Min Y', 'PZY', 'P25 Y',
                 'P50 Y', 'P75 Y', 'P90 Y', 'P99 Y', 'Max Y',
-                'X4', 'X3', 'X2', 'X1', 'X0']
+                'X4', 'X3', 'X2', 'X1', 'X0', 'Z3', 'Z2', 'Z1', 'Z0']
         with open(filepath, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=cols, delimiter='\t')
             writer.writeheader()
