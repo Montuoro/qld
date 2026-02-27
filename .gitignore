@@ -1,0 +1,20 @@
+# Build artifacts
+build/
+dist/
+*.exe
+*.spec
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# PDF source files
+*.pdf
+
+# IDE/tool config
+.claude/
+
+# OS files
+Thumbs.db
+.DS_Store
