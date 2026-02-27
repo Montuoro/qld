@@ -6,6 +6,66 @@ import sys
 sys.stdout.reconfigure(encoding='utf-8')
 
 # ============================================================
+# Load course scaling polynomials for simulation
+# ============================================================
+scales_csv = "C:/PSAM/QLD/atar scaling/course_scales_2025.csv"
+sim_subjects = []
+with open(scales_csv, 'r', encoding='utf-8') as f:
+    reader = csv.reader(f, delimiter='\t')
+    header = next(reader)
+    for row in reader:
+        if len(row) < 23:
+            continue
+        try:
+            x4 = float(row[18])
+        except (ValueError, IndexError):
+            continue
+        if x4 == 0:
+            continue
+        sim_subjects.append({
+            'name': row[0],
+            'X4': float(row[18]),
+            'X3': float(row[19]),
+            'X2': float(row[20]),
+            'X1': float(row[21]),
+            'X0': float(row[22]),
+            'min_x': float(row[2]),
+            'max_x': float(row[9]),
+            'max_y': float(row[17]),
+        })
+
+print(f"Loaded {len(sim_subjects)} general subjects with valid scaling polynomials")
+
+
+def eval_scaling_poly(subj, raw_pct):
+    """Evaluate scaling polynomial for a subject at a given raw score."""
+    if raw_pct < subj['min_x']:
+        return 0.0
+    r = raw_pct
+    scaled = subj['X4']*r**4 + subj['X3']*r**3 + subj['X2']*r**2 + subj['X1']*r + subj['X0']
+    return max(0.0, min(scaled, subj['max_y']))
+
+
+def simulate_aggregate_curve(subjects):
+    """Simulate (raw_pct, aggregate) pairs: at each raw score, take best 5 scaled scores."""
+    results = []
+    for i in range(201):  # 0.0, 0.5, 1.0, ..., 100.0
+        raw_pct = i * 0.5
+        scaled_scores = []
+        for subj in subjects:
+            if raw_pct >= subj['min_x']:
+                sc = eval_scaling_poly(subj, raw_pct)
+                scaled_scores.append(sc)
+        scaled_scores.sort(reverse=True)
+        aggregate = sum(scaled_scores[:5])
+        results.append((raw_pct, aggregate))
+    return results
+
+
+# Simulation blend weight (0 = comparison only, >0 = blend into final curve)
+SIM_BLEND_WEIGHT = 0.0  # e.g. 0.5 for 50% simulation, 50% historical
+
+# ============================================================
 # Reference data
 # ============================================================
 prev_year_data = [
@@ -220,6 +280,11 @@ def clean_and_average(data):
         u_atars.append(atar_s[i])
         u_aggs.append(np.mean(agg_s[i:j]))
         i = j
+    # Enforce monotonicity: higher ATAR must have higher aggregate
+    # Scan upward and fix any reversals by averaging with neighbors
+    for k in range(1, len(u_aggs)):
+        if u_aggs[k] <= u_aggs[k - 1]:
+            u_aggs[k] = u_aggs[k - 1] + 0.01
     return np.array(u_atars), np.array(u_aggs)
 
 
@@ -242,25 +307,57 @@ atar_grid = np.round(np.arange(30.05, 100.00, 0.05), 2)
 W_PREV = 0.60
 W_2023 = 0.40
 
+FADE_ZONE_PREV = 8.0   # Prev year has sparse/unreliable data near its lower bound
+FADE_ZONE_2023 = 2.0   # 2023 goes much lower with better coverage
+
 blended = np.zeros_like(atar_grid)
 for i, a in enumerate(atar_grid):
-    have_prev = prev_atars[0] <= a <= prev_atars[-1]
-    have_2023 = y23_atars[0] <= a <= y23_atars[-1]
+    in_prev = prev_atars[0] <= a <= prev_atars[-1]
+    in_2023 = y23_atars[0] <= a <= y23_atars[-1]
 
-    if have_prev and have_2023:
-        blended[i] = W_PREV * interp_prev(a) + W_2023 * interp_2023(a)
-    elif have_prev:
-        blended[i] = interp_prev(a)
-    elif have_2023:
-        blended[i] = interp_2023(a)
+    # Compute effective weight for each source, fading smoothly near boundaries
+    w_p = W_PREV if in_prev else 0.0
+    w_2 = W_2023 if in_2023 else 0.0
+
+    # Fade prev_year weight with cubic curve: strongly suppresses near boundary,
+    # where only 2 data points exist and PCHIP is unreliable
+    if in_prev and (a - prev_atars[0]) < FADE_ZONE_PREV:
+        t = (a - prev_atars[0]) / FADE_ZONE_PREV
+        w_p *= t * t * t  # cubic fade
+
+    # Fade 2023 weight near its lower boundary (linear — better data coverage)
+    if in_2023 and (a - y23_atars[0]) < FADE_ZONE_2023:
+        fade = (a - y23_atars[0]) / FADE_ZONE_2023
+        w_2 *= fade
+
+    total_w = w_p + w_2
+    if total_w > 0:
+        v_p = float(interp_prev(a)) if in_prev else 0.0
+        v_2 = float(interp_2023(a)) if in_2023 else 0.0
+        blended[i] = (w_p * v_p + w_2 * v_2) / total_w
     else:
         # Below both ranges - linear extrapolation from 2023 (goes lowest)
         slope = float(interp_2023.derivative()(y23_atars[0]))
         blended[i] = float(y23_aggs[0]) + slope * (a - y23_atars[0])
 
+# Smooth extension below ATAR 48: the blend is unreliable here due to sparse
+# data in both reference years. Instead, extend smoothly from the reliable region
+# using the established gradient, with gentle deceleration (matching the shape of
+# historical scales which show near-constant gradient at the bottom end).
+SMOOTH_BELOW = 48.0
+smooth_idx = int(np.searchsorted(atar_grid, SMOOTH_BELOW))
+# Compute gradient from the reliable region just above the transition (ATAR 48-52)
+upper_idx = int(np.searchsorted(atar_grid, 52.0))
+avg_grad_per_step = (blended[upper_idx] - blended[smooth_idx]) / (upper_idx - smooth_idx)
+# Extend downward with gently decelerating gradient (gradient decreases ~5% over full range)
+for j in range(smooth_idx - 1, -1, -1):
+    steps_below = smooth_idx - j
+    # Gentle deceleration: gradient shrinks slightly as ATAR decreases
+    decel_factor = 1.0 - 0.0003 * steps_below
+    grad = avg_grad_per_step * max(decel_factor, 0.85)
+    blended[j] = blended[j + 1] - grad
+
 # Now enforce strict monotonicity on the blended smooth curve
-# (should already be mostly monotonic since both source curves are smooth)
-# Process from low ATAR to high ATAR (ascending) - each higher ATAR needs higher agg
 for i in range(1, len(blended)):
     if blended[i] <= blended[i - 1]:
         blended[i] = blended[i - 1] + 0.01
@@ -357,6 +454,85 @@ for band in sorted_bands:
 print(f"Students in 30.05-99.95: {running} (expected 29,869)")
 
 # ============================================================
+# Simulation-based aggregate curve (triangulation)
+# ============================================================
+sim_curve = simulate_aggregate_curve(sim_subjects)
+sim_raw = np.array([p[0] for p in sim_curve])
+sim_agg_arr = np.array([p[1] for p in sim_curve])
+
+# Verify monotonicity of simulated curve
+sim_diffs = np.diff(sim_agg_arr)
+sim_mono_violations = np.sum(sim_diffs < 0)
+print(f"\nSimulation curve: {len(sim_curve)} points, {sim_mono_violations} monotonicity violations")
+print(f"Simulated max aggregate (raw=100): {sim_agg_arr[-1]:.2f}")
+print(f"Simulated aggregate at raw=50:     {float(np.interp(50, sim_raw, sim_agg_arr)):.2f}")
+
+# Show top-5 subjects at raw=100 (verification of subject selection)
+top5_at_100 = []
+for subj in sim_subjects:
+    sc = eval_scaling_poly(subj, 100.0)
+    top5_at_100.append((sc, subj['name']))
+top5_at_100.sort(reverse=True)
+print(f"\nTop 5 subjects at raw=100 (max scaled scores):")
+for sc, name in top5_at_100[:5]:
+    print(f"  {name}: {sc:.2f}")
+print(f"  Sum (top 5): {sum(s[0] for s in top5_at_100[:5]):.2f}")
+
+# Also show top 10 for context
+print(f"\nAll subjects at raw=100 (top 10):")
+for sc, name in top5_at_100[:10]:
+    print(f"  {sc:6.2f}  {name}")
+
+# Build interpolator: raw_pct -> simulated aggregate
+sim_interp_func = PchipInterpolator(sim_raw, sim_agg_arr)
+
+# Map each ATAR band to a population percentile using the cumulative distribution,
+# then look up the simulated aggregate at that percentile.
+# Percentile = fraction of ATAR-eligible students BELOW this ATAR band (midpoint).
+sim_agg_by_atar = {}
+for band in sorted_bands:
+    students_above = cumulative[band]
+    pct = (TOTAL_STUDENTS - students_above + band_students[band] / 2.0) / TOTAL_STUDENTS * 100.0
+    pct_clamped = max(0.0, min(100.0, pct))
+    sim_agg_by_atar[band] = float(sim_interp_func(pct_clamped))
+
+# Divergence report: historical blended vs simulation
+print(f"\n{'='*80}")
+print(f"  SIMULATION TRIANGULATION: Historical vs Simulated Aggregates")
+print(f"{'='*80}")
+print(f"{'ATAR':>8} | {'Hist Agg':>10} | {'Sim Agg':>10} | {'Diff':>8} | {'Diff %':>8}")
+print("-" * 55)
+for a in [99.95, 99.00, 98.00, 97.00, 96.00, 95.00, 94.00, 93.00, 92.00,
+          91.00, 90.00, 85.00, 80.00, 75.00, 70.00, 65.00, 60.00, 55.00,
+          50.00, 45.00, 40.00, 35.00, 31.00]:
+    hist = agg_lookup.get(a, None)
+    sim = sim_agg_by_atar.get(a, None)
+    if hist is None or sim is None:
+        continue
+    diff = sim - hist
+    pct_diff = diff / hist * 100 if hist != 0 else 0
+    print(f"{a:8.2f} | {hist:10.2f} | {sim:10.2f} | {diff:+8.2f} | {pct_diff:+7.2f}%")
+
+# Optional 3-way blend: merge simulation into the historical curve
+if SIM_BLEND_WEIGHT > 0:
+    print(f"\nApplying simulation blend: {SIM_BLEND_WEIGHT:.0%} simulation, "
+          f"{1 - SIM_BLEND_WEIGHT:.0%} historical")
+    for i, a in enumerate(atar_grid):
+        a_r = round(a, 2)
+        if a_r in sim_agg_by_atar:
+            blended[i] = ((1 - SIM_BLEND_WEIGHT) * blended[i]
+                          + SIM_BLEND_WEIGHT * sim_agg_by_atar[a_r])
+    # Re-enforce monotonicity after blending
+    for i in range(1, len(blended)):
+        if blended[i] <= blended[i - 1]:
+            blended[i] = blended[i - 1] + 0.01
+    blended = np.minimum(blended, 500.0)
+    blended = np.maximum(blended, 0.0)
+    # Rebuild lookup
+    agg_lookup = dict(zip(atar_grid, blended))
+    print("Blended curve updated and monotonicity re-enforced")
+
+# ============================================================
 # Generate final results
 # ============================================================
 results = []
@@ -367,6 +543,13 @@ for band in sorted_bands:
         atar, agg, band_students[band], cumulative[band],
         round(cumulative[band] / TOTAL_STUDENTS * 100, 2)
     ))
+
+# Fix rounding-induced ties: results are sorted descending by ATAR,
+# so each row must have a strictly lower aggregate than the previous.
+for i in range(1, len(results)):
+    if results[i][1] >= results[i-1][1]:
+        fixed_agg = round(results[i-1][1] - 0.01, 2)
+        results[i] = (results[i][0], fixed_agg, results[i][2], results[i][3], results[i][4])
 
 # Final monotonicity check on results (sorted descending by ATAR)
 final_violations = 0
@@ -424,11 +607,11 @@ print(f"Saved: {csv2}")
 # Spot check
 # ============================================================
 result_dict = {r[0]: r[1] for r in results}
-print(f"\n{'='*75}")
-print(f"  SPOT CHECK: 2025 Estimate vs Reference Years")
-print(f"{'='*75}")
-print(f"{'ATAR':>8} | {'2025 Est':>10} | {'Prev Yr':>10} | {'2023':>10} | {'vs Prev':>8} | {'vs 2023':>8}")
-print("-" * 75)
+print(f"\n{'='*90}")
+print(f"  SPOT CHECK: 2025 Estimate vs Reference Years & Simulation")
+print(f"{'='*90}")
+print(f"{'ATAR':>8} | {'2025 Est':>10} | {'Prev Yr':>10} | {'2023':>10} | {'Simulated':>10} | {'vs Prev':>8} | {'vs Sim':>8}")
+print("-" * 90)
 for a in [99.95, 99.00, 98.00, 97.00, 96.00, 95.00, 94.00, 93.00, 92.00,
           91.00, 90.00, 85.00, 80.00, 75.00, 70.00, 65.00, 60.00, 55.00,
           50.00, 45.00, 40.00, 35.00, 31.00]:
@@ -437,11 +620,13 @@ for a in [99.95, 99.00, 98.00, 97.00, 96.00, 95.00, 94.00, 93.00, 92.00,
         continue
     pv = float(interp_prev(a)) if prev_atars[0] <= a <= prev_atars[-1] else None
     y2 = float(interp_2023(a)) if y23_atars[0] <= a <= y23_atars[-1] else None
-    pv_s = f"{pv:10.2f}" if pv else "       N/A"
-    y2_s = f"{y2:10.2f}" if y2 else "       N/A"
-    dp = f"{est-pv:+8.2f}" if pv else "     N/A"
-    dy = f"{est-y2:+8.2f}" if y2 else "     N/A"
-    print(f"{a:8.2f} | {est:10.2f} | {pv_s} | {y2_s} | {dp} | {dy}")
+    sm = sim_agg_by_atar.get(a, None)
+    pv_s = f"{pv:10.2f}" if pv is not None else "       N/A"
+    y2_s = f"{y2:10.2f}" if y2 is not None else "       N/A"
+    sm_s = f"{sm:10.2f}" if sm is not None else "       N/A"
+    dp = f"{est-pv:+8.2f}" if pv is not None else "     N/A"
+    ds = f"{est-sm:+8.2f}" if sm is not None else "     N/A"
+    print(f"{a:8.2f} | {est:10.2f} | {pv_s} | {y2_s} | {sm_s} | {dp} | {ds}")
 
 # Show the aggregate range and gradient info
 print(f"\n=== KEY METRICS ===")
