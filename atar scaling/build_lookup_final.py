@@ -26,7 +26,12 @@ while True:
     except ValueError:
         print("  Invalid input — enter a 4-digit year. Try again.")
 CURRENT_YEAR = _yr
-SCALE_HISTORY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scale_history")
+# When running as a PyInstaller exe, __file__ points to a temp dir; use the exe's folder instead
+if getattr(sys, 'frozen', False):
+    APP_DIR = os.path.dirname(sys.executable)
+else:
+    APP_DIR = os.path.dirname(os.path.abspath(__file__))
+SCALE_HISTORY_DIR = os.path.join(APP_DIR, "scale_history")
 
 def load_historical_scales():
     """Load all saved scales from scale_history/ folder.
@@ -713,8 +718,7 @@ historical_scales = load_historical_scales()
 # Multi-year comparison chart (PNG)
 # X = Aggregate (ascending), Y = ATAR (ascending)
 # ============================================================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-chart_path = os.path.join(BASE_DIR, "scale_comparison.png")
+chart_path = os.path.join(APP_DIR, "scale_comparison.png")
 
 sorted_years = sorted(historical_scales.keys())
 chart_years = sorted_years  # Include all historical years; grows as archive grows
