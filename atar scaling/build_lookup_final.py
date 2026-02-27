@@ -2,8 +2,71 @@ import numpy as np
 from scipy.interpolate import PchipInterpolator
 import csv
 import sys
+import os
+import glob
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend for PNG output
+import matplotlib.pyplot as plt
 
 sys.stdout.reconfigure(encoding='utf-8')
+
+# ============================================================
+# Configuration
+# ============================================================
+CURRENT_YEAR = 2025
+SCALE_HISTORY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scale_history")
+
+def load_historical_scales():
+    """Load all saved scales from scale_history/ folder.
+    Returns dict: {year: [(atar, aggregate), ...]} sorted ascending by ATAR.
+    """
+    scales = {}
+    if not os.path.isdir(SCALE_HISTORY_DIR):
+        return scales
+    for filepath in glob.glob(os.path.join(SCALE_HISTORY_DIR, "scale_*.csv")):
+        basename = os.path.basename(filepath)
+        # Extract year from filename like "scale_2025.csv"
+        try:
+            year = int(basename.replace("scale_", "").replace(".csv", ""))
+        except ValueError:
+            continue
+        pairs = []
+        with open(filepath, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            header = next(reader, None)
+            for row in reader:
+                if len(row) >= 2:
+                    try:
+                        pairs.append((float(row[0]), float(row[1])))
+                    except ValueError:
+                        continue
+        if pairs:
+            pairs.sort(key=lambda x: x[0])  # ascending by ATAR
+            scales[year] = pairs
+    return scales
+
+
+def save_current_scale(results, year):
+    """Save this year's scale to scale_history/ for future cross-checks.
+    Saves (ATAR, Aggregate) pairs.
+    """
+    os.makedirs(SCALE_HISTORY_DIR, exist_ok=True)
+    filepath = os.path.join(SCALE_HISTORY_DIR, f"scale_{year}.csv")
+    with open(filepath, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['ATAR', 'Aggregate'])
+        for row in sorted(results, key=lambda x: x[0]):
+            writer.writerow([row[0], row[1]])
+    print(f"Saved scale to history: {filepath}")
+    return filepath
+
+
+# Load any previously saved historical scales for cross-checking later
+historical_scales = load_historical_scales()
+if historical_scales:
+    print(f"Loaded {len(historical_scales)} historical scale(s) from archive: {sorted(historical_scales.keys())}")
+else:
+    print(f"No historical scales found in {SCALE_HISTORY_DIR}")
 
 # ============================================================
 # Load course scaling polynomials for simulation
@@ -300,6 +363,32 @@ interp_2023 = PchipInterpolator(y23_atars, y23_aggs)
 # Define ATAR grid from 30.05 to 99.95 in 0.05 steps
 atar_grid = np.round(np.arange(30.05, 100.00, 0.05), 2)
 
+# Seed scale_history with reference years if not already present.
+# Interpolate the sparse reference data onto the full ATAR grid.
+PREV_YEAR = CURRENT_YEAR - 1  # 2024
+_seed_years = {
+    PREV_YEAR: (interp_prev, prev_atars),
+    2023:      (interp_2023, y23_atars),
+}
+for _yr, (_interp, _src_atars) in _seed_years.items():
+    _path = os.path.join(SCALE_HISTORY_DIR, f"scale_{_yr}.csv")
+    if not os.path.exists(_path):
+        os.makedirs(SCALE_HISTORY_DIR, exist_ok=True)
+        _pairs = []
+        for a in atar_grid:
+            if _src_atars[0] <= a <= _src_atars[-1]:
+                _pairs.append((round(a, 2), round(float(_interp(a)), 2)))
+        with open(_path, 'w', newline='', encoding='utf-8') as _f:
+            w = csv.writer(_f)
+            w.writerow(['ATAR', 'Aggregate'])
+            for p in _pairs:
+                w.writerow(p)
+        print(f"Seeded historical scale: {_path} ({len(_pairs)} bands)")
+# Reload so seeded years are available
+historical_scales = load_historical_scales()
+if historical_scales:
+    print(f"Historical scales available: {sorted(historical_scales.keys())}")
+
 # Evaluate both smooth curves on the grid
 # Use weighted blend: 60% recent year, 40% 2023
 # Where one year doesn't cover, use the other exclusively
@@ -587,21 +676,69 @@ for row in results:
 # Save CSV files
 # ============================================================
 csv1 = "C:/PSAM/QLD/atar scaling/aggregate_to_atar_2025_final.csv"
-with open(csv1, 'w', newline='') as f:
-    writer = csv.writer(f)
-    writer.writerow(['ATAR', 'Aggregate', 'Students_in_Band', 'Cumulative_Students', 'Cumulative_Pct'])
-    for row in results:
-        writer.writerow(row)
-
 csv2 = "C:/PSAM/QLD/atar scaling/aggregate_atar_lookup_2025_final.csv"
-with open(csv2, 'w', newline='') as f:
-    writer = csv.writer(f)
-    writer.writerow(['Aggregate', 'ATAR'])
-    for row in sorted(results, key=lambda x: x[1], reverse=True):
-        writer.writerow([row[1], row[0]])
 
-print(f"\nSaved: {csv1} ({len(results)} rows)")
-print(f"Saved: {csv2}")
+for csv_path, write_fn in [
+    (csv1, lambda w: [w.writerow(['ATAR', 'Aggregate', 'Students_in_Band', 'Cumulative_Students', 'Cumulative_Pct'])] +
+                     [w.writerow(row) for row in results]),
+    (csv2, lambda w: [w.writerow(['Aggregate', 'ATAR'])] +
+                     [w.writerow([row[1], row[0]]) for row in sorted(results, key=lambda x: x[1], reverse=True)]),
+]:
+    try:
+        with open(csv_path, 'w', newline='') as f:
+            write_fn(csv.writer(f))
+        print(f"Saved: {csv_path}")
+    except PermissionError:
+        print(f"WARNING: Could not write {csv_path} (file may be open in another program)")
+
+# Save to scale history for future years' cross-checks
+save_current_scale(results, CURRENT_YEAR)
+
+# Reload history so the just-saved current year is included
+historical_scales = load_historical_scales()
+
+# ============================================================
+# Multi-year comparison chart (PNG)
+# X = Aggregate (ascending), Y = ATAR (ascending)
+# ============================================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+chart_path = os.path.join(BASE_DIR, "scale_comparison.png")
+
+sorted_years = sorted(historical_scales.keys())
+# Show up to the last 3 years (or all if fewer)
+chart_years = sorted_years[-3:] if len(sorted_years) > 3 else sorted_years
+
+# Distinct styles: older years get thinner dashed lines, current year is bold solid
+line_colors = ['#999999', '#D6604D', '#2166AC', '#4DAF4A', '#FF7F00']
+line_styles = [':', '--', '-', '-.', '-']
+
+fig, ax = plt.subplots(figsize=(12, 7))
+
+for idx, year in enumerate(chart_years):
+    pairs = historical_scales[year]
+    aggs = [p[1] for p in pairs]   # X axis
+    atars = [p[0] for p in pairs]  # Y axis
+    color = line_colors[idx % len(line_colors)]
+    style = line_styles[idx % len(line_styles)]
+    lw = 2.5 if year == CURRENT_YEAR else 1.5
+    alpha = 1.0 if year == CURRENT_YEAR else 0.75
+    ax.plot(aggs, atars, color=color, linestyle=style, linewidth=lw,
+            alpha=alpha, label=str(year))
+
+ax.set_xlabel('Aggregate', fontsize=13)
+ax.set_ylabel('ATAR', fontsize=13)
+ax.set_title(f'QLD Aggregate-to-ATAR Scale Comparison ({chart_years[0]}\u2013{chart_years[-1]})',
+             fontsize=14, fontweight='bold')
+ax.legend(fontsize=12, loc='lower right')
+ax.grid(True, alpha=0.3)
+ax.tick_params(labelsize=11)
+ax.minorticks_on()
+ax.grid(which='minor', alpha=0.15)
+
+plt.tight_layout()
+plt.savefig(chart_path, dpi=150, bbox_inches='tight')
+plt.close()
+print(f"\nSaved comparison chart: {chart_path} ({len(chart_years)} years)")
 
 # ============================================================
 # Spot check
@@ -643,3 +780,158 @@ print(f"  90-95:  {(result_dict[95.00] - result_dict[90.00]) / 5:.2f} agg/ATAR p
 print(f"  80-90:  {(result_dict[90.00] - result_dict[80.00]) / 10:.2f} agg/ATAR pt")
 print(f"  70-80:  {(result_dict[80.00] - result_dict[70.00]) / 10:.2f} agg/ATAR pt")
 print(f"  50-70:  {(result_dict[70.00] - result_dict[50.00]) / 20:.2f} agg/ATAR pt")
+
+# ============================================================
+# Cross-check 1: PDF Table 12 cumulative band verification
+# ============================================================
+print(f"\n{'='*75}")
+print(f"  CROSS-CHECK 1: Band totals vs PDF Table 12")
+print(f"{'='*75}")
+pdf_table12 = [
+    ("90.00-99.95", 7535), ("80.00-89.95", 7223), ("70.00-79.95", 6162),
+    ("60.00-69.95", 4258), ("50.00-59.95", 2586), ("40.00-49.95", 1427),
+    ("30.05-39.95", 678),
+]
+# Also check cumulative
+pdf_cumul = [
+    ("90.00-99.95", 7535), ("80.00-89.95", 14758), ("70.00-79.95", 20920),
+    ("60.00-69.95", 25178), ("50.00-59.95", 27764), ("40.00-49.95", 29191),
+    ("30.05-39.95", 29869),
+]
+print(f"{'Range':>15} | {'PDF Count':>9} | {'Our Count':>9} | {'Match':>5}")
+print("-" * 50)
+for (rng, pdf_count), (_, pdf_cum) in zip(pdf_table12, pdf_cumul):
+    parts = rng.split("-")
+    lo, hi = float(parts[0]), float(parts[1])
+    our_count = sum(band_students.get(round(b, 2), 0)
+                    for b in np.arange(lo, hi + 0.01, 0.05))
+    match = "OK" if our_count == pdf_count else f"DIFF {our_count - pdf_count:+d}"
+    print(f"{rng:>15} | {pdf_count:>9,} | {our_count:>9,} | {match:>5}")
+
+# ============================================================
+# Cross-check 2: Previous year back-test
+# For each real prev-year student (aggregate, actual_ATAR), look up what ATAR
+# our 2025 scale would assign for that same aggregate. The shift should be
+# small and systematic — a large or erratic shift signals a curve problem.
+# ============================================================
+# Build reverse lookup: aggregate -> ATAR (using our 2025 results, sorted ascending by agg)
+results_by_agg = sorted(results, key=lambda x: x[1])
+rev_aggs = np.array([r[1] for r in results_by_agg])
+rev_atars = np.array([r[0] for r in results_by_agg])
+
+def agg_to_atar_2025(aggregate):
+    """Look up what ATAR our 2025 scale gives for a given aggregate."""
+    if aggregate <= rev_aggs[0]:
+        return rev_atars[0]
+    if aggregate >= rev_aggs[-1]:
+        return rev_atars[-1]
+    idx = np.searchsorted(rev_aggs, aggregate)
+    # Linear interpolation between adjacent bands
+    lo, hi = idx - 1, idx
+    frac = (aggregate - rev_aggs[lo]) / (rev_aggs[hi] - rev_aggs[lo])
+    return rev_atars[lo] + frac * (rev_atars[hi] - rev_atars[lo])
+
+print(f"\n{'='*75}")
+print(f"  CROSS-CHECK 2: Previous year back-test")
+print(f"  'If last year's students used the 2025 scale, what ATAR would they get?'")
+print(f"{'='*75}")
+print(f"{'Actual ATAR':>11} | {'Aggregate':>9} | {'2025 ATAR':>9} | {'Shift':>7}")
+print("-" * 45)
+shifts = []
+for agg_val, atar_actual in prev_year_data:
+    atar_2025 = agg_to_atar_2025(agg_val)
+    shift = atar_2025 - atar_actual
+    shifts.append(shift)
+# Print at representative points (every ~20th data point + first/last)
+step = max(1, len(prev_year_data) // 20)
+for i in range(0, len(prev_year_data), step):
+    agg_val, atar_actual = prev_year_data[i]
+    atar_2025 = agg_to_atar_2025(agg_val)
+    shift = atar_2025 - atar_actual
+    print(f"{atar_actual:11.2f} | {agg_val:9.2f} | {atar_2025:9.2f} | {shift:+7.2f}")
+# Last point
+agg_val, atar_actual = prev_year_data[-1]
+atar_2025 = agg_to_atar_2025(agg_val)
+shift = atar_2025 - atar_actual
+print(f"{atar_actual:11.2f} | {agg_val:9.2f} | {atar_2025:9.2f} | {shift:+7.2f}")
+
+shifts_arr = np.array(shifts)
+print(f"\nBack-test summary ({len(shifts)} students):")
+print(f"  Mean shift:   {np.mean(shifts_arr):+.2f} ATAR points")
+print(f"  Median shift: {np.median(shifts_arr):+.2f} ATAR points")
+print(f"  Std dev:      {np.std(shifts_arr):.2f} ATAR points")
+print(f"  Max positive: {np.max(shifts_arr):+.2f} (student gets higher ATAR on 2025 scale)")
+print(f"  Max negative: {np.min(shifts_arr):+.2f} (student gets lower ATAR on 2025 scale)")
+
+# ============================================================
+# Cross-check 3: 2023 back-test (same logic)
+# ============================================================
+print(f"\n{'='*75}")
+print(f"  CROSS-CHECK 3: 2023 back-test")
+print(f"  'If 2023 students used the 2025 scale, what ATAR would they get?'")
+print(f"{'='*75}")
+print(f"{'Actual ATAR':>11} | {'Aggregate':>9} | {'2025 ATAR':>9} | {'Shift':>7}")
+print("-" * 45)
+shifts_23 = []
+for agg_val, atar_actual in year_2023_data:
+    atar_2025 = agg_to_atar_2025(agg_val)
+    shift = atar_2025 - atar_actual
+    shifts_23.append(shift)
+step = max(1, len(year_2023_data) // 20)
+for i in range(0, len(year_2023_data), step):
+    agg_val, atar_actual = year_2023_data[i]
+    atar_2025 = agg_to_atar_2025(agg_val)
+    shift = atar_2025 - atar_actual
+    print(f"{atar_actual:11.2f} | {agg_val:9.2f} | {atar_2025:9.2f} | {shift:+7.2f}")
+agg_val, atar_actual = year_2023_data[-1]
+atar_2025 = agg_to_atar_2025(agg_val)
+shift = atar_2025 - atar_actual
+print(f"{atar_actual:11.2f} | {agg_val:9.2f} | {atar_2025:9.2f} | {shift:+7.2f}")
+
+shifts_23_arr = np.array(shifts_23)
+print(f"\nBack-test summary ({len(shifts_23)} students):")
+print(f"  Mean shift:   {np.mean(shifts_23_arr):+.2f} ATAR points")
+print(f"  Median shift: {np.median(shifts_23_arr):+.2f} ATAR points")
+print(f"  Std dev:      {np.std(shifts_23_arr):.2f} ATAR points")
+print(f"  Max positive: {np.max(shifts_23_arr):+.2f} (student gets higher ATAR on 2025 scale)")
+print(f"  Max negative: {np.min(shifts_23_arr):+.2f} (student gets lower ATAR on 2025 scale)")
+
+# ============================================================
+# Cross-check 4: Historical scale archive back-tests
+# Automatically tests against every saved scale from previous years
+# ============================================================
+if historical_scales:
+    for hist_year in sorted(historical_scales.keys()):
+        if hist_year == CURRENT_YEAR:
+            continue  # Don't back-test against ourselves
+        hist_pairs = historical_scales[hist_year]
+        print(f"\n{'='*75}")
+        print(f"  CROSS-CHECK: {hist_year} archived scale back-test")
+        print(f"  'If {hist_year} scale aggregates are looked up on {CURRENT_YEAR} scale'")
+        print(f"{'='*75}")
+        print(f"{'Orig ATAR':>11} | {'Aggregate':>9} | {f'{CURRENT_YEAR} ATAR':>9} | {'Shift':>7}")
+        print("-" * 45)
+        hist_shifts = []
+        for atar_orig, agg_val in hist_pairs:
+            atar_new = agg_to_atar_2025(agg_val)
+            shift = atar_new - atar_orig
+            hist_shifts.append(shift)
+        # Print representative sample
+        step = max(1, len(hist_pairs) // 20)
+        for i in range(0, len(hist_pairs), step):
+            atar_orig, agg_val = hist_pairs[i]
+            atar_new = agg_to_atar_2025(agg_val)
+            shift = atar_new - atar_orig
+            print(f"{atar_orig:11.2f} | {agg_val:9.2f} | {atar_new:9.2f} | {shift:+7.2f}")
+        # Last point
+        atar_orig, agg_val = hist_pairs[-1]
+        atar_new = agg_to_atar_2025(agg_val)
+        shift = atar_new - atar_orig
+        print(f"{atar_orig:11.2f} | {agg_val:9.2f} | {atar_new:9.2f} | {shift:+7.2f}")
+        hist_shifts_arr = np.array(hist_shifts)
+        print(f"\n{hist_year} back-test summary ({len(hist_shifts)} bands):")
+        print(f"  Mean shift:   {np.mean(hist_shifts_arr):+.2f} ATAR points")
+        print(f"  Median shift: {np.median(hist_shifts_arr):+.2f} ATAR points")
+        print(f"  Std dev:      {np.std(hist_shifts_arr):.2f} ATAR points")
+        print(f"  Max positive: {np.max(hist_shifts_arr):+.2f}")
+        print(f"  Max negative: {np.min(hist_shifts_arr):+.2f}")

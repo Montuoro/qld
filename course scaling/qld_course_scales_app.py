@@ -634,7 +634,7 @@ class QldCourseScalesApp:
         ttk.Button(btn_frame, text="Reset", command=self._reset_current).pack(side=tk.LEFT, padx=2)
         ttk.Button(btn_frame, text="Auto-Fit", command=self._auto_fit_current).pack(side=tk.LEFT, padx=2)
         ttk.Button(btn_frame, text="Auto-Fit All", command=self._auto_fit_all).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="Export", command=self._export_csv).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(btn_frame, text="Export", command=self._export_excel).pack(side=tk.RIGHT, padx=2)
 
         # RIGHT panel
         right_frame = ttk.Frame(main_pane)
@@ -1117,7 +1117,11 @@ class QldCourseScalesApp:
             initialfile=f"course_scales_{datetime.now().year}.xlsx")
         if not filepath:
             return
-        df = pd.DataFrame([s.to_dict() for s in self.subjects])
+        cols = ['Subject Name', 'Subject ID', 'Min X', 'PZX', 'P25 X', 'P50 X',
+                'P75 X', 'P90 X', 'P99 X', 'Max X', 'Min Y', 'PZY', 'P25 Y',
+                'P50 Y', 'P75 Y', 'P90 Y', 'P99 Y', 'Max Y',
+                'X4', 'X3', 'X2', 'X1', 'X0', 'Z3', 'Z2', 'Z1', 'Z0']
+        df = pd.DataFrame([s.to_dict() for s in self.subjects])[cols]
         df.to_excel(filepath, index=False)
         messagebox.showinfo("Exported", f"Saved {len(self.subjects)} subjects to:\n{filepath}")
 
