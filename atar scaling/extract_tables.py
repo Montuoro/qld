@@ -3,7 +3,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 import fitz  # PyMuPDF
 
-pdf_path = r"C:\PSAM\QLD\atar scaling\ATAR_Report_2025.pdf"
+pdf_path = r"C:\Data Projects\psam scaling\qld\atar scaling\ATAR_Report_2025.pdf"
 doc = fitz.open(pdf_path)
 
 print(f"Total pages: {doc.page_count}\n")

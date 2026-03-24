@@ -500,7 +500,7 @@ columns = ['Subject Name', 'Subject ID', 'Min X', 'PZX', 'P25 X', 'P50 X', 'P75 
            'P90 X', 'P99 X', 'Max X', 'Min Y', 'PZY', 'P25 Y', 'P50 Y', 'P75 Y',
            'P90 Y', 'P99 Y', 'Max Y', 'X4', 'X3', 'X2', 'X1', 'X0', 'Z3', 'Z2', 'Z1', 'Z0']
 
-output_file = "C:/PSAM/QLD/atar scaling/course_scales_2025.csv"
+output_file = "C:/Data Projects/psam scaling/qld/atar scaling/course_scales_2025.csv"
 with open(output_file, 'w', newline='', encoding='utf-8') as f:
     writer = csv.DictWriter(f, fieldnames=columns, delimiter='\t')
     writer.writeheader()

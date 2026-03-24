@@ -88,7 +88,7 @@ else:
 # ============================================================
 # Load course scaling polynomials for simulation
 # ============================================================
-scales_csv = "C:/PSAM/QLD/atar scaling/course_scales_2025.csv"
+scales_csv = "C:/Data Projects/psam scaling/qld/atar scaling/course_scales_2025.csv"
 sim_subjects = []
 with open(scales_csv, 'r', encoding='utf-8') as f:
     reader = csv.reader(f, delimiter='\t')
@@ -692,8 +692,8 @@ for row in results:
 # ============================================================
 # Save CSV files
 # ============================================================
-csv1 = "C:/PSAM/QLD/atar scaling/aggregate_to_atar_2025_final.csv"
-csv2 = "C:/PSAM/QLD/atar scaling/aggregate_atar_lookup_2025_final.csv"
+csv1 = "C:/Data Projects/psam scaling/qld/atar scaling/aggregate_to_atar_2025_final.csv"
+csv2 = "C:/Data Projects/psam scaling/qld/atar scaling/aggregate_atar_lookup_2025_final.csv"
 
 for csv_path, write_fn in [
     (csv1, lambda w: [w.writerow(['ATAR', 'Aggregate', 'Students_in_Band', 'Cumulative_Students', 'Cumulative_Pct'])] +
