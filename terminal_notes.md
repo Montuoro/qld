@@ -61,7 +61,7 @@ From a source read only — there is no documentation in this repo to check agai
 
 ### `course scaling/qld_course_scales_app.py` — QCE Course Scaling (tkinter, v2.1)
 The main tool. Upload the QTAC ATAR Report PDF; `PDFExtractor` pulls four tables via PyMuPDF
-(`fitz`) and treats each differently:
+and treats each differently:
 
 - **Tables 6 + 7** → General subjects (7 is the *External* variant).
 - **Table 8** → Applied subjects — three values only (C/B/A), so `build_applied` handles them
@@ -78,8 +78,9 @@ in the GUI, then export the **25-column** format matching previous years — `Su
 `Subject ID`, `Min/PZ/P25/P50/P75/P90/P99/Max` in both X and Y, then `X4..X0` and `Z3..Z0`.
 `build_nodata` emits a placeholder row for subjects with no usable data.
 
-`fitz` is imported behind a `try/except` into a `HAS_FITZ` flag, so the app starts without
-PyMuPDF and only fails at PDF extraction. It **is** installed in the root venv (§4).
+PyMuPDF is imported behind a `try/except` into a `HAS_PYMUPDF` flag, so the app starts
+without it and only fails at PDF extraction. It **is** installed in the root venv (§4). The
+import falls back to the old `fitz` name for PyMuPDF older than 1.24.3 — see §7.
 
 ### `atar scaling/build_lookup_final.py` — ATAR Lookup Builder (console)
 Builds the aggregate-to-ATAR lookup from `scale_history/scale_{2023,2024,2025}.csv` using a
