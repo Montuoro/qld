@@ -1,6 +1,6 @@
 # PSAM Annual Scaling QLD — Terminal Notes
 
-**Last updated:** 2026-09-07.
+**Last updated:** 2026-09-07 (revised same day — see §3, §6).
 **Audience:** the next Claude Code session picking up this repo.
 **Purpose:** self-contained catch-up. Read this first.
 
@@ -40,7 +40,7 @@ them is still live in the source.
 
 ## 2. How to run it
 
-**Normal way:** double-click **PSAM Scaling QLD** on the Desktop → a menu with the three
+**Normal way:** double-click **PSAM Scaling QLD** on the Desktop → a menu with the four
 tools.
 
 **Directly, for debugging** (you get the traceback; the app only shows an alert):
@@ -92,11 +92,20 @@ only. Outputs are the two committed CSVs: `aggregate_atar_lookup_2025_final.csv`
 Rebuilds `course_scales_2025.csv` from extracted Table 6–9 data into the same 25-column
 format as the GUI app. Pure numpy, no prompts.
 
-### `atar scaling/extract_tables.py` — **not in the menu**
-A short scratch script that dumps which PDF pages mention Tables 6–9. Deliberately excluded:
-it has a hardcoded `C:\Data Projects\psam scaling\qld\atar scaling\ATAR_Report_2025.pdf` and
-cannot run as-is on macOS. Fix the path if you want it, then add it to the generator's
-`TOOLS` table (§5).
+### `atar scaling/extract_tables.py` — Report Table Finder (console)
+An inspection tool, not part of the pipeline: run it when a new year's report lands and the
+table pages have moved, then feed what you learn to the parsers in the GUI app. Reports which
+pages mention Tables 6–9, then dumps the text of those pages.
+
+The report PDF is not in the repo (`*.pdf` is gitignored), so the file is resolved at run
+time: a path on the command line wins, else the only PDF sitting next to the script, else a
+file picker. With two report-named PDFs present it refuses and lists them rather than
+guessing — picking the wrong year here costs an afternoon of reading stale page numbers.
+
+The dump window follows the pages that actually matched, rather than the fixed pages 9–25 it
+assumed until 2026-09-07. That window was right for the 2025 report and would have been
+silently wrong for anything paginated differently; the old range survives only as a fallback
+when nothing matches.
 
 ---
 
@@ -107,7 +116,7 @@ for it.
 
 | venv | Python | Serves |
 |---|---|---|
-| `.venv` (repo root) | 3.14.7 | everything — the launcher and all three tools |
+| `.venv` (repo root) | 3.14.7 | everything — the launcher and all four tools |
 
 QLD is the only one of the three repos with **no per-folder venvs**; the root one, created
 2026-09-07, is all there is. It carries pandas, numpy, scipy, matplotlib, **pymupdf**,
@@ -157,16 +166,18 @@ The per-state `TOOLS` table there is the only part that differs between NSW, VIC
 Two launch kinds, and the choice is deliberate:
 - **gui** — the course scaling app: detached, no console, `start_new_session=True` so quitting
   the menu does not kill the editor you are working in.
-- **terminal** — both `atar scaling` scripts: writes a `.command` to the temp dir and opens it
-  in Terminal, because they print their results and one of them calls `input()`. Launching
+- **terminal** — all three `atar scaling` scripts: writes a `.command` to the temp dir and
+  opens it in Terminal, because they print their results and one calls `input()`. Launching
   those detached would swallow the output.
 
 ---
 
 ## 6. Known gaps and gotchas
 
-- **`extract_tables.py` still has a hardcoded Windows path** and is excluded from the menu (§3).
-  It is the one place a `C:\...` path is live in source rather than historical.
+- **`fitz` is deprecated.** PyMuPDF now warns on every run that `import fitz` should be
+  `import pymupdf`. Both `extract_tables.py` and `qld_course_scales_app.py` still use the old
+  name, so the warning is cosmetic noise in the Terminal tools. Change both together or
+  neither.
 - **Quitting from Activity Monitor pops a false "stopped with status 1" alert.** A Tk app
   killed by SIGTERM exits 1, not the 128+signal the bundle's guard assumes. Cmd-Q and the red
   close button both exit 0, so normal use is clean. Not fixable from Python and widening the
@@ -188,6 +199,10 @@ Two launch kinds, and the choice is deliberate:
 - Repo: `https://github.com/Montuoro/psam_qld.git`, branch `main`.
 - Through 2026-08: PyInstaller output-path fix, 2025 course scales data, then path updates for
   the Windows relocation.
+- **2026-09-07, later:** `extract_tables.py` de-Windowsed — the hardcoded
+  `C:\Data Projects\...` path replaced with argument/auto-discovery/file-picker resolution,
+  and the fixed page window made to follow the matched pages. Added to the menu as
+  **Report Table Finder**, so QLD now has four tools.
 - **2026-09-07:** macOS desktop app added — `psam_scaling_launcher.py`, `macos/`, root `.venv`,
-  a `.venv/` rule in `.gitignore`, and the three flower glyphs in `mac_app_tools`. All three
-  tools verified to import under their interpreter; the bundle tested end to end.
+  a `.venv/` rule in `.gitignore`, and the three flower glyphs in `mac_app_tools`. All tools
+  verified to import under their interpreter; the bundle tested end to end.

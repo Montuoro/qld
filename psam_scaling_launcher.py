@@ -48,6 +48,9 @@ TOOLS = [
     ('Course Scales Builder',
      'Rebuild course_scales_2025.csv from the extracted Table 6-9 data.',
      'atar scaling', 'build_course_scales_2025.py', 'terminal'),
+    ('Report Table Finder',
+     'Inspection tool for a new QTAC report: find which pages carry Tables 6-9 and dump their text. Pick the PDF when it asks.',
+     'atar scaling', 'extract_tables.py', 'terminal'),
 ]
 
 NAVY = "#1E2D44"
