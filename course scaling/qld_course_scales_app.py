@@ -22,10 +22,13 @@ import re
 from datetime import datetime
 
 try:
-    import fitz  # PyMuPDF
-    HAS_FITZ = True
+    import pymupdf                 # PyMuPDF >= 1.24.3
 except ImportError:
-    HAS_FITZ = False
+    try:
+        import fitz as pymupdf     # older PyMuPDF shipped only the fitz name,
+    except ImportError:            # which it now warns about on every import
+        pymupdf = None
+HAS_PYMUPDF = pymupdf is not None
 
 # ============================================================
 # Subject ID lookup (stable across years)
@@ -123,9 +126,9 @@ class PDFExtractor:
     """
 
     def __init__(self, pdf_path):
-        if not HAS_FITZ:
-            raise ImportError("PyMuPDF (fitz) is required. Install with: pip install pymupdf")
-        self.doc = fitz.open(pdf_path)
+        if not HAS_PYMUPDF:
+            raise ImportError("PyMuPDF is required. Install with: pip install pymupdf")
+        self.doc = pymupdf.open(pdf_path)
         self.general_subjects = []    # Table 6 + 7
         self.applied_subjects = []    # Table 8
         self.vet_scaled = {}          # Table 9

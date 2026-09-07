@@ -174,10 +174,9 @@ Two launch kinds, and the choice is deliberate:
 
 ## 6. Known gaps and gotchas
 
-- **`fitz` is deprecated.** PyMuPDF now warns on every run that `import fitz` should be
-  `import pymupdf`. Both `extract_tables.py` and `qld_course_scales_app.py` still use the old
-  name, so the warning is cosmetic noise in the Terminal tools. Change both together or
-  neither.
+- **No `requirements.txt`.** QLD is the only one of the three repos without one, so nothing
+  pins the versions the root venv happens to carry (§4). Worth adding next time you touch
+  dependencies.
 - **Quitting from Activity Monitor pops a false "stopped with status 1" alert.** A Tk app
   killed by SIGTERM exits 1, not the 128+signal the bundle's guard assumes. Cmd-Q and the red
   close button both exit 0, so normal use is clean. Not fixable from Python and widening the
@@ -199,6 +198,11 @@ Two launch kinds, and the choice is deliberate:
 - Repo: `https://github.com/Montuoro/psam_qld.git`, branch `main`.
 - Through 2026-08: PyInstaller output-path fix, 2025 course scales data, then path updates for
   the Windows relocation.
+- **2026-09-07, later still:** `import fitz` replaced with `import pymupdf` in both
+  `extract_tables.py` and `qld_course_scales_app.py`, silencing the deprecation warning
+  PyMuPDF prints on every run. `HAS_FITZ` became `HAS_PYMUPDF`. Both keep an
+  `import fitz as pymupdf` fallback because the `pymupdf` name only exists from PyMuPDF
+  1.24.3 and nothing in this repo pins a version.
 - **2026-09-07, later:** `extract_tables.py` de-Windowsed — the hardcoded
   `C:\Data Projects\...` path replaced with argument/auto-discovery/file-picker resolution,
   and the fixed page window made to follow the matched pages. Added to the menu as

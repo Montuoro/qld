@@ -15,7 +15,11 @@ import sys
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-import fitz  # PyMuPDF
+try:
+    import pymupdf                 # PyMuPDF >= 1.24.3
+except ImportError:
+    import fitz as pymupdf         # older PyMuPDF shipped only the fitz name,
+                                   # which it now warns about on every import
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -52,7 +56,7 @@ def find_pdf():
 
 pdf_path = find_pdf()
 print(f"Reading: {pdf_path}\n")
-doc = fitz.open(pdf_path)
+doc = pymupdf.open(pdf_path)
 
 print(f"Total pages: {doc.page_count}\n")
 
