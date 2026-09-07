@@ -1,6 +1,6 @@
 # PSAM Annual Scaling QLD — Terminal Notes
 
-**Last updated:** 2026-09-07 (revised same day — see §3, §6).
+**Last updated:** 2026-09-07 (revised same day — see §3, §4, §6, §7).
 **Audience:** the next Claude Code session picking up this repo.
 **Purpose:** self-contained catch-up. Read this first.
 
