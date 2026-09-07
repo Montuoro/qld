@@ -122,6 +122,7 @@ for it.
 QLD is the only one of the three repos with **no per-folder venvs**; the root one, created
 2026-09-07, is all there is. It carries pandas, numpy, scipy, matplotlib, **pymupdf**,
 openpyxl and `pyobjc-framework-Cocoa` (the last only so the app can claim its own Dock tile).
+`requirements.txt`, added the same day, lists those as floors rather than pins.
 
 **Resolution rule** (`interpreter()` in `psam_scaling_launcher.py`): own folder's `.venv`,
 else the repo root's, else whatever is running the launcher. So dropping a `.venv` into
@@ -175,9 +176,6 @@ Two launch kinds, and the choice is deliberate:
 
 ## 6. Known gaps and gotchas
 
-- **No `requirements.txt`.** QLD is the only one of the three repos without one, so nothing
-  pins the versions the root venv happens to carry (§4). Worth adding next time you touch
-  dependencies.
 - **Quitting from Activity Monitor pops a false "stopped with status 1" alert.** A Tk app
   killed by SIGTERM exits 1, not the 128+signal the bundle's guard assumes. Cmd-Q and the red
   close button both exit 0, so normal use is clean. Not fixable from Python and widening the
@@ -199,6 +197,8 @@ Two launch kinds, and the choice is deliberate:
 - Repo: `https://github.com/Montuoro/psam_qld.git`, branch `main`.
 - Through 2026-08: PyInstaller output-path fix, 2025 course scales data, then path updates for
   the Windows relocation.
+- **2026-09-07, last:** added `requirements.txt`, which this repo had never had. Floors, not
+  pins, matching the sibling NSW and VIC repos and set below what the venv carries.
 - **2026-09-07, later still:** `import fitz` replaced with `import pymupdf` in both
   `extract_tables.py` and `qld_course_scales_app.py`, silencing the deprecation warning
   PyMuPDF prints on every run. `HAS_FITZ` became `HAS_PYMUPDF`. Both keep an

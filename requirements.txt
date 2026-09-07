@@ -1,0 +1,16 @@
+# QLD QCE annual scaling. Floors, not pins — matched to the sibling NSW and VIC
+# repos, and set below what the venv currently carries (pandas 3.0.5,
+# numpy 2.5.3, scipy 1.18.1, matplotlib 3.11.1, pymupdf 1.28.2, openpyxl 3.1.5).
+pandas>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+matplotlib>=3.7.0
+openpyxl>=3.1.0
+
+# PDF extraction for the QTAC ATAR Report. 1.24.3 is the first release to
+# expose the `pymupdf` import name; the code falls back to `fitz` below that.
+pymupdf>=1.24.3
+
+# macOS only, and cosmetic: lets the desktop launcher put its own name and icon
+# on the Dock tile instead of the interpreter's. Nothing fails without it.
+pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"
